@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>30 Gün 30 Oyun - Gün 1: Geometry Dash</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser-arcade-physics.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #111;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+        #game-container {
+            border: 4px solid #00ffcc;
+            box-shadow: 0 0 20px #00ffcc;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container"></div>
+
+    <script>
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 400,
+            parent: 'game-container',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 3000 }, // Sürətli düşmə
+                    debug: false
+                }
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            }
+        };
+
+        const game = new Phaser.Game(config);
+        let player;
+        let obstacles;
+        let score = 0;
+        let scoreText;
+        
+
+        
+
+        function preload() {
+            // Şəkillərin yoxdursa, bura heç nə yükləməyə ehtiyac yoxdur.
+            // Biz "Graphics" obyekti ilə özümüz çəkəcəyik.
+        }
+
+        function create() {
+            const dustGraphic = this.make.graphics().fillStyle(0xffffff).fillRect(0, 0, 4, 4);
+            dustGraphic.generateTexture('dust', 4, 4);
+
+            this.explosionEmitter = this.add.particles(0, 0, 'dust', {
+                lifespan: 800,           // Hissəciklər 0.8 saniyə görünür
+                speed: { min: 150, max: 300 }, // Hər tərəfə sürətli dağılma
+                scale: { start: 3, end: 0 }, // Böyük başlayıb kiçilərək yox olur
+                alpha: { start: 1, end: 0 },   // Getdikcə şəffaflaşır
+                gravityY: 200,           // Bir az aşağı doğru düşmə effekti (fizika)
+                blendMode: 'ADD',        // Parlaqlıq effekti üçün
+                emitting: false          // Yalnız öləndə aktivləşəcək
+            });
+
+            // 2. Emitter (Yayıcı) yaradırıq
+            this.emitter = this.add.particles(0, 0, 'dust', {
+                speedX: { min: -100, max: -200 }, // Toz geriyə doğru uçur
+                speedY: { min: -10, max: -50 },  // Bir az yuxarı sıçrayır
+                scale: { start: 1, end: 2 },     // Getdikcə kiçilir və yox olur
+                alpha: { start: 1, end: 1 },   // Şəffaflaşır
+                lifespan: 500,                   // 0.4 saniyə yaşayır
+                frequency: 50,                   // Hər 50ms-dən bir çıxır
+                emitting: false                  // Başlanğıcda qapalıdır
+            });
+            // 1. Oyunçu (Kvadrat) yaradırıq
+            const playerGraphic = this.make.graphics().fillStyle(0x00ffcc).fillRect(0, 0, 40, 40);
+            playerGraphic.generateTexture('playerTexture', 40, 40);
+            
+            player = this.physics.add.sprite(100, 300, 'playerTexture');
+            player.setCollideWorldBounds(true);
+
+            this.emitter.startFollow(player, -15, 18);
+
+            // 2. Maneə (Üçbucaq) teksturası
+            const spikeGraphic = this.make.graphics().fillStyle(0xff0055).fillTriangle(20, 0, 0, 40, 40, 40);
+            spikeGraphic.generateTexture('spikeTexture', 40, 40);
+
+            obstacles = this.physics.add.group();
+
+            // 3. İdarəetmə (Tıklama və ya Space)
+            this.input.on('pointerdown', jump, this);
+            this.input.keyboard.on('keydown-SPACE', jump, this);
+
+            // 4. Maneələrin yaranması (hər 1.5 saniyədən bir)
+            this.time.addEvent({
+                delay: 1500,
+                callback: spawnObstacle,
+                callbackScope: this,
+                loop: true
+            });
+
+            // 5. Toqquşma
+            this.physics.add.collider(player, obstacles, hitSpike, null, this);
+
+            // 6. Skore
+            scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '24px', fill: '#fff' });
+        }
+
+        function jump() {
+            // Yalnız yerdədirsə tullan (havada tullanmağa icazə vermir)
+            if (player.body.blocked.down) {
+                player.setVelocityY(-900);
+                
+                // Tullananda bir az fırlanma effekti (Geometry Dash stili)
+                this.tweens.add({
+                    targets: player,
+                    angle: player.angle + 90,
+                    duration: 400
+                });
+            }
+        }
+
+        function spawnObstacle() {
+            let spike = obstacles.create(850, 380, 'spikeTexture');
+            spike.setVelocityX(-450); // Maneənin sürəti
+            
+            // Ekrandan çıxanda sil ki, yaddaşı doldurmasın
+            spike.setImmovable(true);
+            spike.body.allowGravity = false;
+        }
+
+        function hitSpike(player, spike) {
+            // Əgər oyunçu artıq "ölübsə", funksiyanı təkrar işlətmə (loopun qarşısını almaq üçün)
+            if (player.isDead) return;
+            player.isDead = true;
+
+            // Partlayış yerini oyunçunun olduğu yerə təyin et və bir dəfə partlat
+            this.explosionEmitter.setPosition(player.x, player.y);
+            this.explosionEmitter.explode(30); // 30 ədəd hissəciyi eyni anda hər tərəfə saç
+
+            // Oyunçunu gizlət və fizikanı dayandır
+            player.setVisible(false);
+            player.body.enable = false;
+
+            // Ekranı sarsıt (Shake effect)
+            // this.cameras.main.shake(300, 0.04);
+
+            this.physics.pause();
+
+            // 2. Yeni maneələrin yaranmasını dayandır
+            // Qeyd: Maneə timer-ini create daxilində "this.spawnTimer" olaraq təyin etməlisən
+            if (this.spawnTimer) {
+                this.spawnTimer.remove();
+            }
+
+            // 1 saniyə sonra oyunu yenidən başlat
+            this.time.delayedCall(1000, () => {
+                this.scene.restart();
+            });
+        }
+
+        function update() {
+            // Maneələr keçdikcə xalı artır (sadə məntiq)
+            obstacles.children.iterate(function (child) {
+                if (child && child.x < 0) {
+                    child.destroy();
+                    score += 10;
+                    scoreText.setText('Score: ' + score);
+                }
+            });
+
+            if (player.body.blocked.down && !player.isDead) {
+                this.emitter.emitting = true;
+                // this.emitter.setTint(0x00ffcc);
+            } else {
+                this.emitter.emitting = false;
+            }
+
+            // if (isDashing) {
+            //     this.emitter.emitting = true;
+            //     this.emitter.setTint(0x00ffcc); // Dash rəngində toz
+            // } else {
+            //     this.emitter.clearTint();
+            // }
+        }
+    </script>
+</body>
+</html>
